@@ -38,8 +38,8 @@ BEGIN
 END
 
 #ifdef __CONSOLE__
-1	ICON	"wrapexec1.ico"
+1	ICON	"winshebang1.ico"
 #else // __CONSOLE__
-1	ICON	"wrapexec2.ico"
+1	ICON	"winshebang2.ico"
 #endif // __CONSOLE__
 
