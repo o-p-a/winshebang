@@ -64,6 +64,11 @@ BidirectionalIterator rfind_if(BidirectionalIterator first, BidirectionalIterato
 	return last;
 }
 
+inline bool isnotwspace(wchar_t c)
+{
+	return !iswspace(c);
+}
+
 inline bool isbackslash(wchar_t c)
 {
 	return c == L'\\' || c == L'/';
@@ -119,6 +124,7 @@ public:
 	Self &operator+=(const char *s);
 
 	Self &assign_from_ansi(const char *s);
+	Self &assign_from_ansi(const uchar *s)		{ return assign_from_ansi((const char*)s); }
 	Self &assign_from_ansi(const string &s)		{ return assign_from_ansi(s.c_str()); }
 	Self &assign_from_utf8(const char *s);
 	Self &assign_from_utf8(const string &s)		{ return assign_from_utf8(s.c_str()); }
@@ -168,6 +174,21 @@ string String::to_ansi() const
 	delete [] buf;
 
 	return r;
+}
+
+String String::trim() const
+{
+	const_iterator
+		b = begin(),
+		e = end();
+
+	b = ::find_if(b, e, isnotwspace);
+	e = ::rfind_if(b, e, isnotwspace);
+
+	if(e != end() && isnotwspace(*e))
+		++e;
+
+	return Self(b, e);
 }
 
 String &String::assign_from_ansi(const char *s)
@@ -280,11 +301,6 @@ inline void putcerr(const char *s1, const String &s2)
 	_putcxxx(s1, s2, stderr);
 }
 
-bool case_ignore_equal(const String &s1, const String &s2)
-{
-	return s1.to_upper() == s2.to_upper();
-}
-
 ////////////////////////////////////////////////////////////////////////
 
 class WindowsAPI {
@@ -334,10 +350,12 @@ String WindowsAPI::GetModuleFileName(HMODULE Module)
 
 ////////////////////////////////////////////////////////////////////////
 
+String
+	shebangline;
+
+// コマンドライン文字列から、コマンド名を除いた残りの部分(コマンドに与えるパラメータの部分)を返す
 String get_given_option(const String &cmdline)
 {
-	// コマンドライン文字列から、コマンド名を除いた残りの部分(コマンドに与えるパラメータの部分)を返す
-
 	bool
 		in_quote = false;
 
@@ -356,41 +374,198 @@ String get_given_option(const String &cmdline)
 	return String();
 }
 
-void show_credit()
+sint execute(const String &cmdline)
 {
-	putcout(credit);
+// putcout("[" + cmdline + "]");
+
+	STARTUPINFO
+		si;
+	PROCESS_INFORMATION
+		pi;
+	DWORD
+		CreationFlags = 0,
+		ExitCode = 0;
+
+	memset(&si, 0, sizeof si);
+	memset(&pi, 0, sizeof pi);
+	si.cb = sizeof si;
+	GetStartupInfo(&si);
+
+	si.dwFlags |= STARTF_FORCEOFFFEEDBACK;
+
+	fflush(stdout);
+	fflush(stderr);
+
+	if(WindowsAPI::CreateProcess(cmdline, CreationFlags, "", &si, &pi) == 0){
+		error = true;
+		return -2;
+	}
+
+	CloseHandle(pi.hThread);
+
+#if defined(__CONSOLE__)
+	WaitForSingleObject(pi.hProcess, INFINITE);
+	GetExitCodeProcess(pi.hProcess, &ExitCode);
+#endif
+
+	CloseHandle(pi.hProcess);
+
+	return ExitCode;
 }
 
-void execute_shebang(String scriptname, String arg)
+void execute_batchfile(const String &scriptname, const String &arg)
 {
+	rcode = execute("\"" + scriptname + "\"" + arg);
 }
 
-void execute_batchfile(String scriptname, String arg)
+void execute_wscript(const String &scriptname, const String &arg)
 {
+#if defined(__CONSOLE__)
+	rcode = execute("cscript //Nologo \"" + scriptname + "\"" + arg);
+#else
+	rcode = execute("wscript //Nologo \"" + scriptname + "\"" + arg);
+#endif
 }
 
-void execute_wscript(String scriptname, String arg)
+void execute_awk(const String &scriptname, const String &arg)
 {
+	rcode = execute("awk -f \"" + scriptname + "\" --" + arg);
 }
 
-void execute_awk(String scriptname, String arg)
+void execute_perl(const String &scriptname, const String &arg)
 {
+#if defined(__CONSOLE__)
+	rcode = execute("perl -- \"" + scriptname + "\"" + arg);
+#else
+	rcode = execute("wperl -- \"" + scriptname + "\"" + arg);
+#endif
 }
 
-void execute_perl(String scriptname, String arg)
+void execute_php(const String &scriptname, const String &arg)
 {
+	rcode = execute("php \"" + scriptname + "\" --" + arg);
 }
 
-void execute_php(String scriptname, String arg)
+void execute_python(const String &scriptname, const String &arg)
 {
+#if defined(__CONSOLE__)
+	rcode = execute("python \"" + scriptname + "\"" + arg);
+#else
+	rcode = execute("pythonw \"" + scriptname + "\"" + arg);
+#endif
 }
 
-void execute_python(String scriptname, String arg)
+void execute_ruby(const String &scriptname, const String &arg)
 {
+#if defined(__CONSOLE__)
+	rcode = execute("ruby -- \"" + scriptname + "\"" + arg);
+#else
+	rcode = execute("rubyw -- \"" + scriptname + "\"" + arg);
+#endif
 }
 
-void execute_ruby(String scriptname, String arg)
+bool file_is_shebang(const String &scriptname)
 {
+	FILE
+		*fp;
+	uchar
+		buf[1000];
+
+	shebangline.clear();
+
+	if((fp = _wfopen(scriptname.c_str(), L"rb")) == NULL)
+		return false;
+
+	fill(buf, buf + sizeof buf, 0);
+	fread(buf, 1, sizeof buf-1, fp); // 最後の1バイトには決して読み込まない
+	fclose(fp);
+
+	for(uchar *s = buf ; *s ; ++s){
+		if(*s == '\n' || *s == '\r'){
+			fill(s, buf + sizeof buf-1, 0);
+			break;
+		}
+	}
+
+	if(!(buf[0] == '#' && buf[1] == '!'))
+		return false;
+
+	shebangline.assign_from_ansi(buf);
+
+	return true;
+}
+
+void execute_shebang(const String &scriptname, const String &arg)
+{
+//putcout(shebangline);
+
+	String::const_iterator
+		b = shebangline.begin(),
+		e = shebangline.end();
+	String
+		shebang_cmd,
+		shebang_arg;
+	String::const_iterator
+		shebang_cmd_b = e,
+		shebang_arg_b = e,
+		shebang_arg_e = e;
+
+	// shebangline が #! で始まることは確認済み。
+	b += 2;
+
+	// #! のあとの空白をスキップ
+	for( ; b != e ; ++b)
+		if(!iswspace(*b))
+			break;
+
+	// コマンド名の切り出し
+	shebang_cmd_b = b;
+	for( ; b != e ; ++b){
+		if(iswspace(*b)){
+			shebang_cmd = String(shebang_cmd_b, b);
+			break;
+		}
+		if(isbackslash(*b))
+			shebang_cmd_b = b + 1;
+	}
+
+	// envだった場合は次のトークンが事実上のコマンド名
+	if(shebang_cmd == "env"){
+		shebang_cmd.clear();
+
+		// 空白をスキップ
+		for( ; b != e ; ++b)
+			if(!iswspace(*b))
+				break;
+
+		// 再度コマンド名の切り出し
+		shebang_cmd_b = b;
+		for( ; b != e ; ++b){
+			if(iswspace(*b)){
+				shebang_cmd = String(shebang_cmd_b, b);
+				break;
+			}
+			if(isbackslash(*b))
+				shebang_cmd_b = b + 1;
+		}
+	}
+
+	// 空白をスキップ
+	for( ; b != e ; ++b)
+		if(!iswspace(*b))
+			break;
+
+	// それ以降は引数
+	shebang_arg = String(b, e).trim();
+
+
+putcout("[" + shebang_cmd + "]");
+putcout("[" + shebang_arg + "]");
+
+
+
+
+
 }
 
 void winshebang_main()
@@ -400,37 +575,51 @@ void winshebang_main()
 		arg = get_given_option(WindowsAPI::GetCommandLine()),
 		s;
 
-putcout("[" + exename + "]");
-putcout("[" + arg + "]");
-
-	if(s = exename.subext(""), file_is_exist(s)){
+	if(s = exename.subext(""), file_is_shebang(s)){
 		execute_shebang(s, arg);
+
 	}else if(s = exename.subext(".bat"), file_is_exist(s)){
 		execute_batchfile(s, arg);
+
 	}else if(s = exename.subext(".cmd"), file_is_exist(s)){
 		execute_batchfile(s, arg);
+
 	}else if(s = exename.subext(".js"), file_is_exist(s)){
 		execute_wscript(s, arg);
+
 	}else if(s = exename.subext(".vbs"), file_is_exist(s)){
 		execute_wscript(s, arg);
-	}else if(s = exename.subext(".awk"), file_is_exist(s)){
-		execute_awk(s, arg);
-	}else if(s = exename.subext(".pl"), file_is_exist(s)){
-		execute_perl(s, arg);
-	}else if(s = exename.subext(".php"), file_is_exist(s)){
-		execute_php(s, arg);
-	}else if(s = exename.subext(".py"), file_is_exist(s)){
-		execute_python(s, arg);
-	}else if(s = exename.subext(".pyw"), file_is_exist(s)){
-		execute_python(s, arg);
+
 	}else if(s = exename.subext(".rb"), file_is_exist(s)){
 		execute_ruby(s, arg);
+
 	}else if(s = exename.subext(".rbw"), file_is_exist(s)){
 		execute_ruby(s, arg);
+
+	}else if(s = exename.subext(".pl"), file_is_exist(s)){
+		execute_perl(s, arg);
+
+	}else if(s = exename.subext(".plw"), file_is_exist(s)){
+		execute_perl(s, arg);
+
+	}else if(s = exename.subext(".py"), file_is_exist(s)){
+		execute_python(s, arg);
+
+	}else if(s = exename.subext(".pyw"), file_is_exist(s)){
+		execute_python(s, arg);
+
+	}else if(s = exename.subext(".awk"), file_is_exist(s)){
+		execute_awk(s, arg);
+
+	}else if(s = exename.subext(".php"), file_is_exist(s)){
+		execute_php(s, arg);
+
 	}else{
 		putcout(credit);
 		putcout("");
 		putcout("Error: shebang target file not found.");
+		error = true;
+		rcode = 1;
 	}
 }
 
