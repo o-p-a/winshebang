@@ -18,7 +18,7 @@
 #define PGM_INFO			PGM ": "
 #define PGM_WARN			PGM " warning: "
 #define PGM_ERR				PGM " error: "
-#define VERSTR				"0.01"
+#define VERSTR				"1.00"
 
 #define CREDIT2011			"Copyright (c) 2011 by opa"
 
@@ -374,10 +374,8 @@ String get_given_option(const String &cmdline)
 	return String();
 }
 
-sint execute(const String &cmdline)
+sint system(const String &cmdline)
 {
-// putcout("[" + cmdline + "]");
-
 	STARTUPINFO
 		si;
 	PROCESS_INFORMATION
@@ -413,54 +411,60 @@ sint execute(const String &cmdline)
 	return ExitCode;
 }
 
+sint system_hide(const String &cmdline)
+{
+	STARTUPINFO
+		si;
+	PROCESS_INFORMATION
+		pi;
+	DWORD
+		CreationFlags = 0,
+		ExitCode = 0;
+
+	memset(&si, 0, sizeof si);
+	memset(&pi, 0, sizeof pi);
+	si.cb = sizeof si;
+	GetStartupInfo(&si);
+
+	si.wShowWindow = SW_HIDE;					// ← ここが異なる
+	si.dwFlags |= STARTF_USESHOWWINDOW;			// ← ここが異なる
+	si.dwFlags |= STARTF_FORCEOFFFEEDBACK;
+
+	fflush(stdout);
+	fflush(stderr);
+
+	if(WindowsAPI::CreateProcess(cmdline, CreationFlags, "", &si, &pi) == 0){
+		error = true;
+		return -2;
+	}
+
+	CloseHandle(pi.hThread);
+
+#if defined(__CONSOLE__)
+	WaitForSingleObject(pi.hProcess, INFINITE);
+	GetExitCodeProcess(pi.hProcess, &ExitCode);
+#endif
+
+	CloseHandle(pi.hProcess);
+
+	return ExitCode;
+}
+
 void execute_batchfile(const String &scriptname, const String &arg)
 {
-	rcode = execute("\"" + scriptname + "\"" + arg);
+#if defined(__CONSOLE__)
+	rcode = system("\"" + scriptname + "\"" + arg);
+#else
+	rcode = system_hide("\"" + scriptname + "\"" + arg);
+#endif
 }
 
 void execute_wscript(const String &scriptname, const String &arg)
 {
 #if defined(__CONSOLE__)
-	rcode = execute("cscript //Nologo \"" + scriptname + "\"" + arg);
+	rcode = system("cscript //Nologo \"" + scriptname + "\"" + arg);
 #else
-	rcode = execute("wscript //Nologo \"" + scriptname + "\"" + arg);
-#endif
-}
-
-void execute_awk(const String &scriptname, const String &arg)
-{
-	rcode = execute("awk -f \"" + scriptname + "\" --" + arg);
-}
-
-void execute_perl(const String &scriptname, const String &arg)
-{
-#if defined(__CONSOLE__)
-	rcode = execute("perl -- \"" + scriptname + "\"" + arg);
-#else
-	rcode = execute("wperl -- \"" + scriptname + "\"" + arg);
-#endif
-}
-
-void execute_php(const String &scriptname, const String &arg)
-{
-	rcode = execute("php \"" + scriptname + "\" --" + arg);
-}
-
-void execute_python(const String &scriptname, const String &arg)
-{
-#if defined(__CONSOLE__)
-	rcode = execute("python \"" + scriptname + "\"" + arg);
-#else
-	rcode = execute("pythonw \"" + scriptname + "\"" + arg);
-#endif
-}
-
-void execute_ruby(const String &scriptname, const String &arg)
-{
-#if defined(__CONSOLE__)
-	rcode = execute("ruby -- \"" + scriptname + "\"" + arg);
-#else
-	rcode = execute("rubyw -- \"" + scriptname + "\"" + arg);
+	rcode = system("wscript //Nologo \"" + scriptname + "\"" + arg);
 #endif
 }
 
@@ -479,16 +483,18 @@ bool file_is_shebang(const String &scriptname)
 	fill(buf, buf + sizeof buf, 0);
 	fread(buf, 1, sizeof buf-1, fp); // 最後の1バイトには決して読み込まない
 	fclose(fp);
-
+	
+	// #!で始まっているか判定
+	if(!(buf[0] == '#' && buf[1] == '!'))
+		return false;
+	
+	// 先頭行のみ見る
 	for(uchar *s = buf ; *s ; ++s){
 		if(*s == '\n' || *s == '\r'){
 			fill(s, buf + sizeof buf-1, 0);
 			break;
 		}
 	}
-
-	if(!(buf[0] == '#' && buf[1] == '!'))
-		return false;
 
 	shebangline.assign_from_ansi(buf);
 
@@ -497,18 +503,13 @@ bool file_is_shebang(const String &scriptname)
 
 void execute_shebang(const String &scriptname, const String &arg)
 {
-//putcout(shebangline);
-
 	String::const_iterator
 		b = shebangline.begin(),
-		e = shebangline.end();
+		e = shebangline.end(),
+		shebang_cmd_b;
 	String
 		shebang_cmd,
 		shebang_arg;
-	String::const_iterator
-		shebang_cmd_b = e,
-		shebang_arg_b = e,
-		shebang_arg_e = e;
 
 	// shebangline が #! で始まることは確認済み。
 	b += 2;
@@ -520,8 +521,8 @@ void execute_shebang(const String &scriptname, const String &arg)
 
 	// コマンド名の切り出し
 	shebang_cmd_b = b;
-	for( ; b != e ; ++b){
-		if(iswspace(*b)){
+	for( ; ; ++b){
+		if(b == e || iswspace(*b)){
 			shebang_cmd = String(shebang_cmd_b, b);
 			break;
 		}
@@ -540,8 +541,8 @@ void execute_shebang(const String &scriptname, const String &arg)
 
 		// 再度コマンド名の切り出し
 		shebang_cmd_b = b;
-		for( ; b != e ; ++b){
-			if(iswspace(*b)){
+		for( ; ; ++b){
+			if(b == e || iswspace(*b)){
 				shebang_cmd = String(shebang_cmd_b, b);
 				break;
 			}
@@ -555,17 +556,30 @@ void execute_shebang(const String &scriptname, const String &arg)
 		if(!iswspace(*b))
 			break;
 
-	// それ以降は引数
+	// 残りは引数
 	shebang_arg = String(b, e).trim();
+	if(shebang_arg.size() > 0)
+		shebang_cmd += " " + shebang_arg;
 
+#if defined(__CONSOLE__)
+#else
+	if(shebang_cmd == "perl")
+		shebang_cmd = "wperl";
 
-putcout("[" + shebang_cmd + "]");
-putcout("[" + shebang_arg + "]");
+	if(shebang_cmd == "ruby")
+		shebang_cmd = "rubyw";
+	
+	if(shebang_cmd == "python")
+		shebang_cmd = "pythonw";
 
+	if(shebang_cmd == "php")
+		shebang_cmd = "php-win";
+#endif
 
+//putcout("[" + shebangline + "]");
+//putcout("[" + shebang_cmd + " \"" + scriptname + "\"" + arg + "]");
 
-
-
+	rcode = system(shebang_cmd + " \"" + scriptname + "\"" + arg);
 }
 
 void winshebang_main()
@@ -587,32 +601,14 @@ void winshebang_main()
 	}else if(s = exename.subext(".js"), file_is_exist(s)){
 		execute_wscript(s, arg);
 
+	}else if(s = exename.subext(".jse"), file_is_exist(s)){
+		execute_wscript(s, arg);
+
 	}else if(s = exename.subext(".vbs"), file_is_exist(s)){
 		execute_wscript(s, arg);
 
-	}else if(s = exename.subext(".rb"), file_is_exist(s)){
-		execute_ruby(s, arg);
-
-	}else if(s = exename.subext(".rbw"), file_is_exist(s)){
-		execute_ruby(s, arg);
-
-	}else if(s = exename.subext(".pl"), file_is_exist(s)){
-		execute_perl(s, arg);
-
-	}else if(s = exename.subext(".plw"), file_is_exist(s)){
-		execute_perl(s, arg);
-
-	}else if(s = exename.subext(".py"), file_is_exist(s)){
-		execute_python(s, arg);
-
-	}else if(s = exename.subext(".pyw"), file_is_exist(s)){
-		execute_python(s, arg);
-
-	}else if(s = exename.subext(".awk"), file_is_exist(s)){
-		execute_awk(s, arg);
-
-	}else if(s = exename.subext(".php"), file_is_exist(s)){
-		execute_php(s, arg);
+	}else if(s = exename.subext(".vbe"), file_is_exist(s)){
+		execute_wscript(s, arg);
 
 	}else{
 		putcout(credit);
