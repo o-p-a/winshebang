@@ -18,7 +18,7 @@
 #define PGM_INFO			PGM ": "
 #define PGM_WARN			PGM " warning: "
 #define PGM_ERR				PGM " error: "
-#define VERSTR				"1.00"
+#define VERSTR				"1.01"
 
 #define CREDIT2011			"Copyright (c) 2011 by opa"
 
@@ -468,6 +468,24 @@ void execute_wscript(const String &scriptname, const String &arg)
 #endif
 }
 
+void execute_java_jar(const String &jarname, const String &arg)
+{
+#if defined(__CONSOLE__)
+	rcode = system("java -jar \"" + jarname + "\"" + arg);
+#else
+	rcode = system("javaw -jar \"" + jarname + "\"" + arg);
+#endif
+}
+
+void execute_java_class(const String &classname, const String &arg)
+{
+#if defined(__CONSOLE__)
+	rcode = system("java \"" + classname + "\"" + arg);
+#else
+	rcode = system("javaw \"" + classname + "\"" + arg);
+#endif
+}
+
 bool file_is_shebang(const String &scriptname)
 {
 	FILE
@@ -609,6 +627,12 @@ void winshebang_main()
 
 	}else if(s = exename.subext(".vbe"), file_is_exist(s)){
 		execute_wscript(s, arg);
+
+	}else if(s = exename.subext(".jar"), file_is_exist(s)){
+		execute_java_jar(s, arg);
+
+	}else if(s = exename.subext(".class"), file_is_exist(s)){
+		execute_java_class(s, arg);
 
 	}else{
 		putcout(credit);
