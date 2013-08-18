@@ -18,9 +18,9 @@
 #define PGM_INFO			PGM ": "
 #define PGM_WARN			PGM " warning: "
 #define PGM_ERR				PGM " error: "
-#define VERSTR				"1.01"
+#define VERSTR				"1.02"
 
-#define CREDIT2011			"Copyright (c) 2011 by opa"
+#define CREDIT2011			"Copyright (c) 2011-2013 by opa"
 
 typedef signed char schar;
 typedef unsigned char uchar;
@@ -574,11 +574,6 @@ void execute_shebang(const String &scriptname, const String &arg)
 		if(!iswspace(*b))
 			break;
 
-	// Žc‚è‚Íˆø”
-	shebang_arg = String(b, e).trim();
-	if(shebang_arg.size() > 0)
-		shebang_cmd += " " + shebang_arg;
-
 #if defined(__CONSOLE__)
 #else
 	if(shebang_cmd == "perl")
@@ -594,8 +589,10 @@ void execute_shebang(const String &scriptname, const String &arg)
 		shebang_cmd = "php-win";
 #endif
 
-//putcout("[" + shebangline + "]");
-//putcout("[" + shebang_cmd + " \"" + scriptname + "\"" + arg + "]");
+	// Žc‚è‚Íˆø”
+	shebang_arg = String(b, e).trim();
+	if(shebang_arg.size() > 0)
+		shebang_cmd += " " + shebang_arg;
 
 	rcode = system(shebang_cmd + " \"" + scriptname + "\"" + arg);
 }
