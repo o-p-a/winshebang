@@ -15,26 +15,34 @@ if not exist "%GUIBIN%" (
 	goto :eof
 )
 
-call :exec1 C "%USRLOCAL%\bat\_Archive"
-call :exec1 C "%USRLOCAL%\bat\BackupWithDate"
-call :exec1 C "%USRLOCAL%\bat\btype"
-call :exec1 C "%USRLOCAL%\bat\CheckOsVersion"
-call :exec1 C "%USRLOCAL%\bat\DeleteIfExist"
-call :exec1 C "%USRLOCAL%\bat\MakeRename"
-call :exec1 C "%USRLOCAL%\bat\MoveWithDatetime"
-call :exec1 C "%USRLOCAL%\bat\NetUse"
-call :exec1 C "%USRLOCAL%\bat\NetUseDeleteAll"
-call :exec1 C "%USRLOCAL%\bat\NoMore"
-call :exec1 C "%USRLOCAL%\bat\RenameByTimestamp"
-call :exec1 C "%USRLOCAL%\bat\TimeSync"
-
+call :exec1 C "%USRLOCAL%\bat\AutoHotKey_run"
+call :exec1 C "%USRLOCAL%\bat\Hayate_run"
 call :exec1 G "%USRLOCAL%\bat\ExtractArchive"
-call :exec1 G "%USRLOCAL%\bat\Launcher"
-call :exec1 G "%USRLOCAL%\bat\logger"
 call :exec1 G "%USRLOCAL%\bat\pedTaskTray"
+call :exec1 G "%USRLOCAL%\bat\startx"
 call :exec1 G "%USRLOCAL%\bat\TeraTerm"
 call :exec1 G "%USRLOCAL%\bat\vncviewer"
 call :exec1 G "%USRLOCAL%\bat\WebAppExecutor"
+
+call :exec1 C "%USRLOCAL%\bin\_Archive"
+call :exec1 C "%USRLOCAL%\bin\BackupWithDate"
+call :exec1 C "%USRLOCAL%\bin\btype"
+call :exec1 C "%USRLOCAL%\bin\CheckOsVersion"
+call :exec1 C "%USRLOCAL%\bin\create_file_list"
+call :exec1 C "%USRLOCAL%\bin\danpenkun"
+call :exec1 C "%USRLOCAL%\bin\DeleteIfExist"
+call :exec1 C "%USRLOCAL%\bin\MakeRename"
+call :exec1 C "%USRLOCAL%\bin\MakeShortcut"
+call :exec1 C "%USRLOCAL%\bin\NetUse"
+call :exec1 C "%USRLOCAL%\bin\NetUseDeleteAll"
+call :exec1 C "%USRLOCAL%\bin\NoMore"
+call :exec1 C "%USRLOCAL%\bin\renren"
+call :exec1 C "%USRLOCAL%\bin\rm2recycle"
+call :exec1 C "%USRLOCAL%\bin\TimeSync"
+call :exec1 C "%USRLOCAL%\bin\wait_workstation_up"
+call :exec1 G "%USRLOCAL%\bin\dpk"
+
+call :exec1 G "%USRLOCAL%\program\WinMergePortable\WinMergePortable"
 
 popd
 endlocal
