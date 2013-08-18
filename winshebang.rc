@@ -2,9 +2,9 @@
 
 #include <winver.h>
 
-#define VERNUM				1,0,1,0
-#define VERSTR				"1.01"
-#define CREDIT2011			"Copyright (c) 2011 by opa"
+#define VERNUM				1,0,2,0
+#define VERSTR				"1.02"
+#define CREDIT2011			"Copyright (c) 2011-2013 by opa"
 #define PGM					"winshebang"
 #define DESCRIPTION			"Shebang for Windows"
 
