@@ -18,7 +18,7 @@
 #define PGM_INFO			PGM ": "
 #define PGM_WARN			PGM " warning: "
 #define PGM_ERR				PGM " error: "
-#define VERSTR				"1.02"
+#define VERSTR				"1.03"
 
 #define CREDIT2011			"Copyright (c) 2011-2013 by opa"
 
@@ -69,27 +69,20 @@ inline bool isnotwspace(wchar_t c)
 	return !iswspace(c);
 }
 
-inline bool isbackslash(wchar_t c)
+inline bool filename_separator(wchar_t c)
 {
 	return c == L'\\' || c == L'/';
 }
 
 bool file_is_exist(const wchar_t *filename)
 {
-#if 1
 	_wffblk ff;
-	sint r;
-
-	r = _wfindfirst(filename, &ff, FA_NORMAL + FA_HIDDEN + FA_SYSTEM);
+	sint r = _wfindfirst(filename, &ff, FA_NORMAL + FA_HIDDEN + FA_SYSTEM);
 	_wfindclose(&ff);
-
 	return r == 0;
-#else
-	return _waccess(filename, 0) == 0;
-#endif
 }
 
-inline bool file_is_exist(const wstring &filename)
+bool file_is_exist(const wstring &filename)
 {
 	return file_is_exist(filename.c_str());
 }
@@ -226,8 +219,8 @@ String String::basename() const
 		b = begin(),
 		e = end();
 
-	b = ::rfind_if(b, e, ::isbackslash);
-	if(b != end() && ::isbackslash(*b))
+	b = ::rfind_if(b, e, ::filename_separator);
+	if(b != end() && ::filename_separator(*b))
 		++b;
 
 	e = ::rfind(b, e, L'.');
@@ -235,6 +228,15 @@ String String::basename() const
 		e = end();
 
 	return Self(b, e);
+}
+
+String::const_iterator skipspace(String::const_iterator b, String::const_iterator e)
+{
+	for( ; b != e ; ++b)
+		if(!iswspace(*b))
+			break;
+
+	return b;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -374,7 +376,7 @@ String get_given_option(const String &cmdline)
 	return String();
 }
 
-sint system(const String &cmdline)
+sint system(const String &cmdline, bool hide=false)
 {
 	STARTUPINFO
 		si;
@@ -390,6 +392,10 @@ sint system(const String &cmdline)
 	GetStartupInfo(&si);
 
 	si.dwFlags |= STARTF_FORCEOFFFEEDBACK;
+	if(hide){
+		si.wShowWindow = SW_HIDE;
+		si.dwFlags |= STARTF_USESHOWWINDOW;
+	}
 
 	fflush(stdout);
 	fflush(stderr);
@@ -401,49 +407,8 @@ sint system(const String &cmdline)
 
 	CloseHandle(pi.hThread);
 
-#if defined(__CONSOLE__)
 	WaitForSingleObject(pi.hProcess, INFINITE);
 	GetExitCodeProcess(pi.hProcess, &ExitCode);
-#endif
-
-	CloseHandle(pi.hProcess);
-
-	return ExitCode;
-}
-
-sint system_hide(const String &cmdline)
-{
-	STARTUPINFO
-		si;
-	PROCESS_INFORMATION
-		pi;
-	DWORD
-		CreationFlags = 0,
-		ExitCode = 0;
-
-	memset(&si, 0, sizeof si);
-	memset(&pi, 0, sizeof pi);
-	si.cb = sizeof si;
-	GetStartupInfo(&si);
-
-	si.wShowWindow = SW_HIDE;					// ← ここが異なる
-	si.dwFlags |= STARTF_USESHOWWINDOW;			// ← ここが異なる
-	si.dwFlags |= STARTF_FORCEOFFFEEDBACK;
-
-	fflush(stdout);
-	fflush(stderr);
-
-	if(WindowsAPI::CreateProcess(cmdline, CreationFlags, "", &si, &pi) == 0){
-		error = true;
-		return -2;
-	}
-
-	CloseHandle(pi.hThread);
-
-#if defined(__CONSOLE__)
-	WaitForSingleObject(pi.hProcess, INFINITE);
-	GetExitCodeProcess(pi.hProcess, &ExitCode);
-#endif
 
 	CloseHandle(pi.hProcess);
 
@@ -455,7 +420,7 @@ void execute_batchfile(const String &scriptname, const String &arg)
 #if defined(__CONSOLE__)
 	rcode = system("\"" + scriptname + "\"" + arg);
 #else
-	rcode = system_hide("\"" + scriptname + "\"" + arg);
+	rcode = system("\"" + scriptname + "\"" + arg, true);
 #endif
 }
 
@@ -509,7 +474,7 @@ bool file_is_shebang(const String &scriptname)
 	// 先頭行のみ見る
 	for(uchar *s = buf ; *s ; ++s){
 		if(*s == '\n' || *s == '\r'){
-			fill(s, buf + sizeof buf-1, 0);
+			*s = 0;
 			break;
 		}
 	}
@@ -522,60 +487,39 @@ bool file_is_shebang(const String &scriptname)
 void execute_shebang(const String &scriptname, const String &arg)
 {
 	String::const_iterator
-		b = shebangline.begin(),
+		b = shebangline.begin() + 2,	// #! をスキップ
 		e = shebangline.end(),
 		shebang_cmd_b;
 	String
 		shebang_cmd,
 		shebang_arg;
 
-	// shebangline が #! で始まることは確認済み。
-	b += 2;
-
-	// #! のあとの空白をスキップ
-	for( ; b != e ; ++b)
-		if(!iswspace(*b))
-			break;
+	b = skipspace(b, e);	// #! のあとの空白をスキップ
 
 	// コマンド名の切り出し
-	shebang_cmd_b = b;
-	for( ; ; ++b){
-		if(b == e || iswspace(*b)){
-			shebang_cmd = String(shebang_cmd_b, b);
-			break;
-		}
-		if(isbackslash(*b))
+	for(shebang_cmd_b = b ; !(b == e || iswspace(*b)) ; ++b){
+		if(filename_separator(*b))
 			shebang_cmd_b = b + 1;
 	}
+	shebang_cmd = String(shebang_cmd_b, b);
 
 	// envだった場合は次のトークンが事実上のコマンド名
 	if(shebang_cmd == "env"){
 		shebang_cmd.clear();
 
-		// 空白をスキップ
-		for( ; b != e ; ++b)
-			if(!iswspace(*b))
-				break;
+		b = skipspace(b, e);	// 空白をスキップ
 
 		// 再度コマンド名の切り出し
-		shebang_cmd_b = b;
-		for( ; ; ++b){
-			if(b == e || iswspace(*b)){
-				shebang_cmd = String(shebang_cmd_b, b);
-				break;
-			}
-			if(isbackslash(*b))
+		for(shebang_cmd_b = b ; !(b == e || iswspace(*b)) ; ++b){
+			if(filename_separator(*b))
 				shebang_cmd_b = b + 1;
 		}
+		shebang_cmd = String(shebang_cmd_b, b);
 	}
 
-	// 空白をスキップ
-	for( ; b != e ; ++b)
-		if(!iswspace(*b))
-			break;
+	b = skipspace(b, e);	// 空白をスキップ
 
-#if defined(__CONSOLE__)
-#else
+#if !defined(__CONSOLE__)
 	if(shebang_cmd == "perl")
 		shebang_cmd = "wperl";
 
